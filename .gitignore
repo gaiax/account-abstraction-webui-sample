@@ -35,3 +35,17 @@ yarn-error.log*
 next-env.d.ts
 
 /styled-system
+node_modules
+.env
+coverage
+coverage.json
+typechain
+typechain-types
+
+# Hardhat files
+cache
+artifacts
+
+
+# Compiled output
+/dist
