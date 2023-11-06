@@ -19,6 +19,7 @@ import { ContractFactory, Wallet, ethers } from "ethers";
 import { useEffect, useMemo, useState } from "react";
 import { Bytes, serializeTransaction } from "ethers/lib/utils";
 import { SampleNFT__factory, SampleToken__factory } from "@/typechain-types";
+import AccountView, { AccountAPIData } from "../components/accountView";
 
 const ENTRY_POINT_ADDRESS = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
 
@@ -34,27 +35,23 @@ export default function Home() {
     []
   );
 
-  const accountFactory = DeterministicDeployer.getAddress(
-    new ContractFactory(
-      SimpleAccountFactory__factory.abi,
-      SimpleAccountFactory__factory.bytecode
+  const [accountAPIData, setAccountAPIData] = useState<AccountAPIData>({
+    accoutFactory: DeterministicDeployer.getAddress(
+      new ContractFactory(
+        SimpleAccountFactory__factory.abi,
+        SimpleAccountFactory__factory.bytecode
+      ),
+      0,
+      [ENTRY_POINT_ADDRESS]
     ),
-    0,
-    [ENTRY_POINT_ADDRESS]
-  );
-
-  const [counterFactualAddress, setCounterFactualAddress] = useState("");
-  const [nonce, setNonce] = useState(0);
-  const [accountApi, setAccountApi] = useState<SimpleAccountAPI | null>(null);
-
-  const [erc20ContractAddress, setERC20ContractAddress] = useState("");
-  const [erc20TokenSymbol, setERC20TokenSymbol] = useState("");
-  const [nftContractAddress, setNFTContractAddress] = useState("");
-
-  const [accountBalance, setAccountBalance] = useState(BigInt(0));
-  const [accountDeployed, setAccountDeployed] = useState(false);
-  const [accountERC20Balance, setAccountERC20Balance] = useState(BigInt(0));
-  const [accountOwnedNFTs, setAccountOwnedNFTs] = useState<BigInt[]>([]);
+    nonce: 0,
+    accountAPI: null,
+    counterFactualAddress: null,
+    erc20ContractAddress: null,
+    erc20TokenSymbol: null,
+    erc20TokenDecimals: null,
+    nftContractAddress: null,
+  });
 
   const [txTo, setTxTo] = useState("");
   const [txInputError, setTxInputError] = useState("");
@@ -67,98 +64,41 @@ export default function Home() {
   const [isTxSending, setIsTxSending] = useState(false);
 
   useEffect(() => {
-    const accountApi = new SimpleAccountAPI({
+    const accountAPI = new SimpleAccountAPI({
       provider,
       entryPointAddress: ENTRY_POINT_ADDRESS,
-      factoryAddress: accountFactory,
+      factoryAddress: accountAPIData.accoutFactory,
       owner: wallet,
-      index: nonce,
+      index: accountAPIData.nonce,
     });
-    setAccountApi(accountApi);
+    setAccountAPIData((prev) => {
+      return {
+        ...prev,
+        accountAPI,
+      };
+    });
 
     const getCounterFactualAddress = async () => {
-      const addr = await accountApi.getCounterFactualAddress();
-      setCounterFactualAddress(addr);
+      const addr = await accountAPI.getCounterFactualAddress();
+      setAccountAPIData((prev) => {
+        return {
+          ...prev,
+          counterFactualAddress: addr,
+        };
+      });
     };
+
     getCounterFactualAddress();
-  }, [setAccountApi, nonce, provider, wallet, accountFactory]);
-
-  useEffect(() => {
-    const getBalance = async () => {
-      if (counterFactualAddress) {
-        const balance = await provider.getBalance(counterFactualAddress);
-        setAccountBalance(balance.toBigInt());
-      }
-    };
-    const checkIsAccountDeployed = async () => {
-      if (counterFactualAddress) {
-        const code = await provider.getCode(counterFactualAddress);
-        setAccountDeployed(code !== "0x");
-      }
-    };
-
-    getBalance();
-    checkIsAccountDeployed();
-  }, [counterFactualAddress, provider]);
-
-  useEffect(() => {
-    const getERC20Balance = async () => {
-      if (counterFactualAddress && erc20ContractAddress) {
-        const erc20 = SampleToken__factory.connect(
-          erc20ContractAddress,
-          provider
-        );
-        const decimals = await erc20.decimals();
-        const symbol = await erc20.symbol();
-        const balance = await erc20.balanceOf(counterFactualAddress);
-        setAccountERC20Balance(balance.toBigInt() / 10n ** BigInt(decimals));
-        setERC20TokenSymbol(symbol);
-      }
-    };
-
-    const getNFTs = async () => {
-      if (counterFactualAddress && nftContractAddress) {
-        const nft = SampleNFT__factory.connect(nftContractAddress, provider);
-
-        const receivedNFTs = await nft.queryFilter(
-          nft.filters.Transfer(null, counterFactualAddress)
-        );
-
-        const receivedNFTsWithOwners = await Promise.all(
-          receivedNFTs.map(async (log) => {
-            const tID = log.args.tokenId;
-            const tOwner = await nft.ownerOf(tID);
-            return { log, owner: tOwner };
-          })
-        );
-
-        const ownedNFTs = receivedNFTsWithOwners
-          .filter(({ log, owner }) => {
-            return owner.toLowerCase() === counterFactualAddress.toLowerCase();
-          })
-          .map(({ log }) => log.args.tokenId.toBigInt());
-
-        setAccountOwnedNFTs(ownedNFTs);
-      }
-    };
-
-    getERC20Balance().catch(console.error);
-    getNFTs().catch(console.error);
-  }, [
-    counterFactualAddress,
-    erc20ContractAddress,
-    nftContractAddress,
-    provider,
-  ]);
+  }, [accountAPIData.accoutFactory, accountAPIData.nonce, provider, wallet]);
 
   const decodeFunctionData = () => {
-    if (txFunctionCallData == null) {
+    if (!txFunctionCallData) {
       return null;
     }
 
-    if (txType == "ERC20") {
+    if (txType == "ERC20" && accountAPIData.erc20ContractAddress) {
       const iface = SampleToken__factory.connect(
-        erc20ContractAddress,
+        accountAPIData.erc20ContractAddress,
         provider
       ).interface;
       return (
@@ -168,15 +108,18 @@ export default function Home() {
       );
     }
 
-    if (txType == "ERC721") {
+    if (txType == "ERC721" && accountAPIData.nftContractAddress) {
       const iface = SampleNFT__factory.connect(
-        nftContractAddress,
+        accountAPIData.nftContractAddress,
         provider
       ).interface;
       return (
         "safeTransferFrom(" +
         iface
-          .decodeFunctionData("safeTransferFrom", txFunctionCallData)
+          .decodeFunctionData(
+            "safeTransferFrom(address,address,uint256)",
+            txFunctionCallData
+          )
           .toString() +
         ")"
       );
@@ -187,119 +130,10 @@ export default function Home() {
 
   return (
     <Container py={"6"} maxW={"800px"}>
-      <Box mb={"3"}>
-        <h1
-          className={css({
-            textAlign: "center",
-            fontSize: "2rem",
-            fontWeight: "bold",
-          })}
-        >
-          Account Abstraction Demo
-        </h1>
-      </Box>
-      <Box textAlign="center" mb={"3"}>
-        <p
-          className={css({
-            fontWeight: "bold",
-          })}
-        >
-          Account Factory: {accountFactory}
-        </p>
-      </Box>
-      <Box textAlign="center" mb={"3"}>
-        <p
-          className={css({
-            fontWeight: "bold",
-          })}
-        >
-          Signer: {wallet.address}
-        </p>
-        (prvKey: {wallet.privateKey})
-      </Box>
-      <Box textAlign="center" mb={"3"}>
-        <p
-          className={css({
-            fontWeight: "bold",
-            mb: "1",
-          })}
-        >
-          Counter Factual Address: {counterFactualAddress}
-        </p>
-        <p>balance: {ethers.utils.formatEther(accountBalance)} ETH</p>
-        <p>deployed: {accountDeployed ? "yes" : "no"}</p>
-        <p>
-          nonce:{" "}
-          <input
-            type="text"
-            className={css({
-              textAlign: "center",
-              border: "1px solid black",
-              borderRadius: "md",
-            })}
-            value={nonce}
-            onChange={(e) => {
-              if (e.target.value && !isNaN(parseInt(e.target.value))) {
-                setNonce(parseInt(e.target.value));
-              }
-            }}
-          />
-        </p>
-      </Box>
-      <Box textAlign="center" mb={"3"}>
-        <Box mb={"2"}>
-          <p>
-            ERC20 token balance: {accountERC20Balance.toString()}{" "}
-            {erc20TokenSymbol}
-          </p>
-          <p>
-            Owned NFTs:{" "}
-            {accountOwnedNFTs.map((nft) => nft.toString()).join(", ")}
-          </p>
-        </Box>
-        <p>
-          ERC20 contract address:{" "}
-          <input
-            type="text"
-            className={css({
-              textAlign: "center",
-              border: "1px solid black",
-              borderRadius: "md",
-              mb: "1",
-            })}
-            value={erc20ContractAddress}
-            onChange={(e) => {
-              if (
-                e.target.value &&
-                ethers.utils.isAddress(e.target.value.toLowerCase())
-              ) {
-                setERC20ContractAddress(e.target.value.toLowerCase());
-              }
-            }}
-          />
-        </p>
-        <p>
-          NFT contract address:{" "}
-          <input
-            type="text"
-            className={css({
-              textAlign: "center",
-              border: "1px solid black",
-              borderRadius: "md",
-              mb: "1",
-            })}
-            value={nftContractAddress}
-            onChange={(e) => {
-              if (
-                e.target.value &&
-                ethers.utils.isAddress(e.target.value.toLowerCase())
-              ) {
-                setNFTContractAddress(e.target.value.toLowerCase());
-              }
-            }}
-          />
-        </p>
-      </Box>
+      <AccountView
+        {...{ wallet, provider, accountAPIData, setAccountAPIData }}
+      />
+
       <Box mb={"3"}>
         <h2
           className={css({
@@ -381,23 +215,43 @@ export default function Home() {
               }
             }}
           />
-          {txType == "ETH" ? "ETH" : txType == "ERC20" ? erc20TokenSymbol : ""}
+          {txType == "ETH"
+            ? "ETH"
+            : txType == "ERC20"
+            ? accountAPIData.erc20TokenSymbol
+            : ""}
         </Box>
         <Button
           disabled={isTxSending}
           onClick={async () => {
-            if (!accountApi) {
+            const {
+              accountAPI,
+              erc20ContractAddress,
+              nftContractAddress,
+              counterFactualAddress,
+            } = accountAPIData;
+            if (accountAPI == null || !txTo || txValue < 0) {
               return;
             }
 
             setIsTxSending(true);
 
-            let callData;
+            let callData: string;
+            let txTarget: string;
+
             switch (txType) {
-              case "ETH":
+              case "ETH": {
                 callData = "0x";
+                txTarget = txTo;
                 break;
-              case "ERC20":
+              }
+
+              case "ERC20": {
+                if (!erc20ContractAddress) {
+                  return;
+                }
+
+                txTarget = erc20ContractAddress;
                 callData = SampleToken__factory.connect(
                   erc20ContractAddress,
                   provider
@@ -405,8 +259,15 @@ export default function Home() {
                   txTo,
                   ethers.utils.parseEther(txValue.toString()),
                 ]);
+
                 break;
-              case "ERC721":
+              }
+              case "ERC721": {
+                if (!nftContractAddress || !counterFactualAddress) {
+                  return;
+                }
+
+                txTarget = nftContractAddress;
                 callData = SampleNFT__factory.connect(
                   nftContractAddress,
                   provider
@@ -414,20 +275,19 @@ export default function Home() {
                   "safeTransferFrom(address,address,uint256)",
                   [counterFactualAddress, txTo, txValue]
                 );
+
                 break;
-              default:
+              }
+              default: {
                 callData = "0x";
+                txTarget = txTo;
                 break;
+              }
             }
             setTxFunctionCallData(callData);
 
-            const userOp = await accountApi.createSignedUserOp({
-              target:
-                txType == "ETH"
-                  ? txTo
-                  : txType == "ERC20"
-                  ? erc20ContractAddress
-                  : nftContractAddress,
+            const userOp = await accountAPI.createSignedUserOp({
+              target: txTarget,
               value:
                 txType == "ETH"
                   ? ethers.utils.parseEther(txValue.toString())
@@ -438,7 +298,7 @@ export default function Home() {
             const userOpHash = await bundlerProvider.sendUserOpToBundler(
               userOp
             );
-            const txid = await accountApi.getUserOpReceipt(userOpHash);
+            const txid = await accountAPI.getUserOpReceipt(userOpHash);
             setTxStruct(userOp);
 
             console.log(

@@ -26,6 +26,17 @@ async function main() {
       validate: (value: string) =>
         ethers.utils.isAddress(value) || "Invalid recipient address",
     },
+    {
+      type: "number",
+      name: "amountMultiplier",
+      message: "Amount multiplier: ",
+      validate: (value: number) => {
+        if (value < 0) return "Amount multiplier must be positive";
+        if (!Number.isInteger(value))
+          return "Amount multiplier must be integer";
+        return true;
+      },
+    },
   ];
 
   const response = await prompts(questions, {
@@ -47,16 +58,23 @@ async function main() {
 
   const tx = await erc20.mint(
     response.recipient,
-    10n * 10n ** BigInt(decimals)
+    10n * 10n ** BigInt(decimals) * BigInt(response.amountMultiplier)
   );
   const reciept1 = await tx.wait();
 
-  const tx2 = await nft.safeMint(response.recipient);
-  const reciept2 = await tx2.wait();
+  let reciept2 = [];
+  for (let i = 0; i < response.amountMultiplier; i++) {
+    const tx = await nft.safeMint(response.recipient);
+    reciept2.push(await tx.wait());
+  }
 
   console.log("Done");
   console.log("ERC20 token reciept:", reciept1.transactionHash);
-  console.log("NFT reciept:", reciept2.transactionHash);
+  console.log(
+    "NFT reciept:",
+    reciept2.map((r) => r.transactionHash)
+  );
+  console.log("");
 
   const balance = await erc20.balanceOf(response.recipient);
   console.log("ERC20 token balance of recipient:", balance.toString());
