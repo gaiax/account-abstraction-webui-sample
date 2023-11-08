@@ -42,6 +42,14 @@ async function main() {
   console.log("Sample ERC20 contract address:", erc20.address);
   console.log("Sample NFT contract address:", nft.address);
   console.log("Sample Paymaster contract address:", paymaster.address);
+
+  console.log("Staking 1000 tokens for 7 days to paymaster...");
+  const tx = await paymaster.addStake(60 * 60 * 24 * 7, {
+    value: ethers.utils.parseEther("1000"),
+  });
+  await tx.wait();
+
+  console.log("Done!");
 }
 
 if (require.main === module) {
