@@ -4,6 +4,10 @@ pragma solidity ^0.8.0;
 import "@account-abstraction/contracts/core/BasePaymaster.sol";
 
 contract SamplePaymaster is BasePaymaster {
+    using UserOperationLib for UserOperation;
+
+    uint256 public constant COST_OF_POST_OP = 35000;
+
     mapping(address => uint256) private balances;
     uint256 private totalUserDepositedBalance;
 
@@ -12,37 +16,41 @@ contract SamplePaymaster is BasePaymaster {
     ) BasePaymaster(_entryPoint) Ownable(msg.sender) {}
 
     /// @inheritdoc BasePaymaster
-    // function _validatePaymasterUserOp(
-    //     UserOperation calldata _userOp,
-    //     bytes32 _userOpHash,
-    //     uint256 _maxCost
-    // ) internal override returns (bytes memory context, uint256 validationData) {
-    //     // require(
-    //     //     balances[_userOp.sender] >= _maxCost,
-    //     //     string(
-    //     //         abi.encodePacked(
-    //     //             "SamplePaymaster: insufficient balance; ",
-    //     //             "balance=",
-    //     //             balances[_userOp.sender],
-    //     //             " needed=",
-    //     //             _maxCost
-    //     //         )
-    //     //     )
-    //     // );
-
-    //     // balances[_userOp.sender] = balances[_userOp.sender] - _maxCost;
-    //     // totalUserDepositedBalance -= _maxCost;
-
-    //     // (_userOpHash); // unused value
-    //     // return (abi.encode(_userOp.sender), 0);
-    // }
     function _validatePaymasterUserOp(
         UserOperation calldata _userOp,
         bytes32 _userOpHash,
         uint256 _maxCost
-    ) internal override returns (bytes memory context, uint256 validationData) {
-        (_userOp, _userOpHash, _maxCost); // unused value
-        return ("0x", 0);
+    )
+        internal
+        view
+        override
+        returns (bytes memory context, uint256 validationData)
+    {
+        require(
+            _userOp.verificationGasLimit >= COST_OF_POST_OP,
+            "SamplePaymaster: insufficient verification gas limit"
+        );
+
+        address account = _userOp.getSender();
+        require(
+            balances[account] >= _maxCost,
+            string(
+                abi.encodePacked(
+                    "SamplePaymaster: insufficient balance; ",
+                    "balance=",
+                    balances[account],
+                    " needed=",
+                    _maxCost
+                )
+            )
+        );
+
+        uint256 gasPrice = _userOp.maxFeePerGas;
+        // comment this line to avoid using banned opcode: block.basefee
+        // uint256 gasPrice = _userOp.gasPrice();
+
+        (_userOpHash); // unused value
+        return (abi.encode(account, gasPrice), 0);
     }
 
     /// @inheritdoc BasePaymaster
@@ -51,14 +59,23 @@ contract SamplePaymaster is BasePaymaster {
         bytes calldata context,
         uint256 actualGasCost
     ) internal override {
-        // address user = abi.decode(context, (address));
-        // balances[user] += actualGasCost;
-        // totalUserDepositedBalance += actualGasCost;
-        // (mode); // unused value
+        (address account, uint256 gasPrice) = abi.decode(
+            context,
+            (address, uint256)
+        );
+
+        uint256 actualCost = actualGasCost + COST_OF_POST_OP * gasPrice;
+
+        if (mode != PostOpMode.postOpReverted) {
+            balances[account] -= actualCost;
+            totalUserDepositedBalance -= actualCost;
+        }
     }
 
     /// @inheritdoc BasePaymaster
-    function _requireFromEntryPoint() internal override {}
+    function _requireFromEntryPoint() internal pure override {
+        return;
+    }
 
     /// Deposit to the paymaster for a designated user.
     /// @param _user The user to deposit to

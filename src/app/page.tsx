@@ -366,18 +366,13 @@ export default function Home() {
                 }
 
                 txTarget = paymasterAddress;
-                // callData = SamplePaymaster__factory.connect(
-                //   paymasterAddress,
-                //   provider
-                // ).interface.encodeFunctionData("depositTo", [
-                //   txTo,
-                //   ethers.utils.parseEther(txPaymasterOverhead.toString()),
-                // ]);
-
                 callData = SamplePaymaster__factory.connect(
                   paymasterAddress,
                   provider
-                ).interface.encodeFunctionData("deposit");
+                ).interface.encodeFunctionData("depositTo", [
+                  txTo,
+                  ethers.utils.parseEther(txPaymasterOverhead.toString()),
+                ]);
 
                 break;
               }
