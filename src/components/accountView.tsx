@@ -55,6 +55,12 @@ const AccountView: React.FC<AccountViewProps> = ({
   });
 
   useEffect(() => {
+    console.log("fetching balance");
+    const counterFactualAddress = accountAPIData.counterFactualAddress;
+    const erc20ContractAddress = accountAPIData.erc20ContractAddress;
+    const nftContractAddress = accountAPIData.nftContractAddress;
+    const paymasterAddress = accountAPIData.paymasterAddress;
+
     const getBalance = async () => {
       if (accountAPIData.counterFactualAddress) {
         const balance = await provider.getBalance(
@@ -79,7 +85,6 @@ const AccountView: React.FC<AccountViewProps> = ({
     };
 
     const getERC20Balance = async () => {
-      const { counterFactualAddress, erc20ContractAddress } = accountAPIData;
       if (counterFactualAddress && erc20ContractAddress) {
         const erc20 = SampleToken__factory.connect(
           erc20ContractAddress,
@@ -114,7 +119,6 @@ const AccountView: React.FC<AccountViewProps> = ({
     };
 
     const getNFTs = async () => {
-      const { counterFactualAddress, nftContractAddress } = accountAPIData;
       if (counterFactualAddress && nftContractAddress) {
         const nft = SampleNFT__factory.connect(nftContractAddress, provider);
 
@@ -153,7 +157,6 @@ const AccountView: React.FC<AccountViewProps> = ({
     };
 
     const getBalanceAtPaymaster = async () => {
-      const { counterFactualAddress, paymasterAddress } = accountAPIData;
       if (counterFactualAddress && paymasterAddress) {
         const paymaster = SampleToken__factory.connect(
           paymasterAddress,
@@ -179,7 +182,6 @@ const AccountView: React.FC<AccountViewProps> = ({
     };
 
     const getBalanceOfPaymaster = async () => {
-      const { counterFactualAddress, paymasterAddress } = accountAPIData;
       if (counterFactualAddress && paymasterAddress) {
         const paymaster = SamplePaymaster__factory.connect(
           paymasterAddress,
@@ -205,7 +207,6 @@ const AccountView: React.FC<AccountViewProps> = ({
     };
 
     const checkIsAccountDeployed = async () => {
-      const { counterFactualAddress } = accountAPIData;
       if (counterFactualAddress) {
         const code = await provider.getCode(counterFactualAddress);
         setAccountBalance((prev) => {
@@ -230,7 +231,14 @@ const AccountView: React.FC<AccountViewProps> = ({
     getBalanceAtPaymaster().catch((e) => console.error(e));
     getBalanceOfPaymaster().catch((e) => console.error(e));
     checkIsAccountDeployed().catch((e) => console.error(e));
-  }, [accountAPIData, provider, setAccountAPIData]);
+  }, [
+    accountAPIData.counterFactualAddress,
+    accountAPIData.erc20ContractAddress,
+    accountAPIData.nftContractAddress,
+    accountAPIData.paymasterAddress,
+    provider,
+    setAccountAPIData,
+  ]);
 
   return (
     <Box>

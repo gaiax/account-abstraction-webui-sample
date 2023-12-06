@@ -4,27 +4,12 @@ import Button from "@src/components/button";
 import { css } from "@styles/css";
 import { Container, Box } from "@styles/jsx";
 
-import {
-  SimpleAccountFactory__factory,
-  SimpleAccount__factory,
-  UserOperationStruct,
-} from "@account-abstraction/contracts";
-import {
-  DeterministicDeployer,
-  HttpRpcClient,
-  PaymasterAPI,
-  SimpleAccountAPI,
-} from "@account-abstraction/sdk";
+import { UserOperationStruct } from "@account-abstraction/contracts";
+import { HttpRpcClient, SimpleAccountAPI } from "@account-abstraction/sdk";
 import { JsonRpcProvider } from "@ethersproject/providers";
-import { ContractFactory, Wallet, ethers } from "ethers";
-import { use, useEffect, useMemo, useState } from "react";
-import {
-  Bytes,
-  arrayify,
-  hexlify,
-  resolveProperties,
-  serializeTransaction,
-} from "ethers/lib/utils";
+import { Wallet, ethers } from "ethers";
+import { useEffect, useMemo, useState } from "react";
+import { hexlify, resolveProperties } from "ethers/lib/utils";
 import {
   SampleNFT__factory,
   SamplePaymaster__factory,
@@ -38,33 +23,28 @@ type TxType = "ETH" | "ERC20" | "ERC721" | "PaymasterDeposit";
 
 export default function Home() {
   const wallet = useMemo(() => new Wallet("0x".padEnd(66, "7")), []);
-  const provider = useMemo(
-    () => new JsonRpcProvider("http://127.0.0.1:8545"),
-    []
-  );
+
+  const endpoint = process.env.NEXT_PUBLIC_ALCHEMY_API_ENDPOINT;
+
+  const provider = useMemo(() => new JsonRpcProvider(endpoint), [endpoint]);
+
   const bundlerProvider = useMemo(
-    () =>
-      new HttpRpcClient("http://127.0.0.1:3000/rpc", ENTRY_POINT_ADDRESS, 1337),
-    []
+    () => new HttpRpcClient(endpoint || "", ENTRY_POINT_ADDRESS, 11155111),
+    [endpoint]
   );
 
   const [accountAPIData, setAccountAPIData] = useState<AccountAPIData>({
-    accoutFactory: DeterministicDeployer.getAddress(
-      new ContractFactory(
-        SimpleAccountFactory__factory.abi,
-        SimpleAccountFactory__factory.bytecode
-      ),
-      0,
-      [ENTRY_POINT_ADDRESS]
-    ),
+    accoutFactory: "0x0Ad67E3353363E83090224CCc290fA688a05008b", // sepolia network only
     nonce: 0,
     accountAPI: null,
     counterFactualAddress: null,
-    erc20ContractAddress: null,
+    erc20ContractAddress:
+      process.env.NEXT_PUBLIC_ERC20_CONTRACT_ADDRESS || null,
     erc20TokenSymbol: null,
     erc20TokenDecimals: null,
-    nftContractAddress: null,
-    paymasterAddress: null,
+    nftContractAddress: process.env.NEXT_PUBLIC_ERC721_CONTRACT_ADDRESS || null,
+    paymasterAddress:
+      process.env.NEXT_PUBLIC_PAYMASTER_CONTRACT_ADDRESS || null,
   });
 
   const [usePaymaster, setUsePaymaster] = useState(false);
@@ -151,20 +131,6 @@ export default function Home() {
       );
     }
 
-    // if (txType == "PaymasterDeposit" && accountAPIData.paymasterAddress) {
-    //   const iface = SamplePaymaster__factory.connect(
-    //     accountAPIData.paymasterAddress,
-    //     provider
-    //   ).interface;
-    //   return (
-    //     "depositTo(" +
-    //     iface
-    //       .decodeFunctionData("depositTo(address,uint256)", txFunctionCallData)
-    //       .toString() +
-    //     ")"
-    //   );
-    // }
-
     return null;
   };
 
@@ -250,8 +216,8 @@ export default function Home() {
             })}
             value={txValue.toString()}
             onChange={(e) => {
-              if (e.target.value && !isNaN(parseInt(e.target.value))) {
-                setTxValue(parseInt(e.target.value));
+              if (e.target.value && !isNaN(Number(e.target.value))) {
+                setTxValue(Number(e.target.value));
                 setTxStruct(undefined);
               }
             }}
