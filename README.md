@@ -15,3 +15,25 @@ Bundler には [Rundler](https://github.com/alchemyplatform/rundler) を使用�
 - Docker Compose v2.23.3
 
 ## 起動方法
+
+### 1. リポジトリをクローン
+
+```bash
+$ git clone https://github.com/alchemyplatform/rundler.git
+$ git clone https://github.com/gaiax/account-abstraction-webui-sample.git
+```
+
+### 2. バックグラウンドサービスを起動
+
+```bash
+$ cd rundler && docker buildx build . -t rundler
+$ docker compose up -d
+```
+
+### 3. EntryPoint など必要なコントラクトをデプロイ
+
+以下のコマンドを入力すると，CLI プロンプトが開始されるので，適宜状況に応じて進めてください．
+
+```bash
+$ npx hardhat run src/scripts/setup.ts --network localhost
+```
