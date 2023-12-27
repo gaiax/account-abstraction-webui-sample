@@ -8,23 +8,23 @@ async function main() {
     {
       type: "text",
       name: "tokenAddress",
-      message: "Token address: ",
+      message: "ERC20 contract address: ",
       validate: (value: string) =>
-        ethers.utils.isAddress(value) || "Invalid token address",
+        ethers.utils.isAddress(value) || "Invalid address",
     },
     {
       type: "text",
       name: "nftAddress",
-      message: "NFT address: ",
+      message: "ERC721 contract address: ",
       validate: (value: string) =>
-        ethers.utils.isAddress(value) || "Invalid NFT address",
+        ethers.utils.isAddress(value) || "Invalid address",
     },
     {
       type: "text",
       name: "recipient",
       message: "Recipient address: ",
       validate: (value: string) =>
-        ethers.utils.isAddress(value) || "Invalid recipient address",
+        ethers.utils.isAddress(value) || "Invalid address",
     },
     {
       type: "number",
