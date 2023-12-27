@@ -49,3 +49,5 @@ artifacts
 
 # Compiled output
 /dist
+
+**/.yarn/cache

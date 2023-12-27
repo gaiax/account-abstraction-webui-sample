@@ -24,7 +24,7 @@ const config: HardhatUserConfig = {
       chainId: 1337,
     },
     sepolia: {
-      url: process.env.NEXT_PUBLIC_ALCHEMY_API_ENDPOINT,
+      url: process.env.NEXT_PUBLIC_ETH_RPC_ENDPOINT,
       accounts: [process.env.PRIVATE_KEY as string],
     },
   },

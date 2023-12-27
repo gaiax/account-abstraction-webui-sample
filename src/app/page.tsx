@@ -24,17 +24,24 @@ type TxType = "ETH" | "ERC20" | "ERC721" | "PaymasterDeposit";
 export default function Home() {
   const wallet = useMemo(() => new Wallet("0x".padEnd(66, "7")), []);
 
-  const endpoint = process.env.NEXT_PUBLIC_ALCHEMY_API_ENDPOINT;
+  const aaEndpoint = process.env.NEXT_PUBLIC_AA_RPC_ENDPOINT;
+  const ethEndpoint = process.env.NEXT_PUBLIC_ETH_RPC_ENDPOINT;
+  const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 1337;
 
-  const provider = useMemo(() => new JsonRpcProvider(endpoint), [endpoint]);
+  const accountFactory = process.env.NEXT_PUBLIC_ACCOUNT_FACTORY_ADDRESS || "";
+
+  const provider = useMemo(
+    () => new JsonRpcProvider(ethEndpoint),
+    [ethEndpoint]
+  );
 
   const bundlerProvider = useMemo(
-    () => new HttpRpcClient(endpoint || "", ENTRY_POINT_ADDRESS, 11155111),
-    [endpoint]
+    () => new HttpRpcClient(aaEndpoint || "", ENTRY_POINT_ADDRESS, chainId),
+    [aaEndpoint, chainId]
   );
 
   const [accountAPIData, setAccountAPIData] = useState<AccountAPIData>({
-    accoutFactory: "0x0Ad67E3353363E83090224CCc290fA688a05008b", // sepolia network only
+    accoutFactory: accountFactory,
     nonce: 0,
     accountAPI: null,
     counterFactualAddress: null,
