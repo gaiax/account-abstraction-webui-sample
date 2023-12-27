@@ -1,0 +1,21 @@
+[package]
+name = "rundler-types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rundler-utils = { path = "../utils" }
+
+anyhow.workspace = true
+chrono = "0.4.24"
+ethers.workspace = true
+parse-display = "0.8.0"
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true
+
+[build-dependencies]
+ethers.workspace = true

@@ -1,0 +1,565 @@
+// This file is part of Rundler.
+//
+// Rundler is free software: you can redistribute it and/or modify it under the
+// terms of the GNU Lesser General Public License as published by the Free Software
+// Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// Rundler is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with Rundler.
+// If not, see https://www.gnu.org/licenses/.
+
+// Defines the schemas for an ERC-4337 UserOperation mempool.
+
+syntax = "proto3";
+
+package op_pool;
+
+// Protocol Buffer representation of an ERC-4337 UserOperation. See the official
+// specification at https://eips.ethereum.org/EIPS/eip-4337#definitions
+message UserOperation {
+  // The account making the operation
+  bytes sender = 1;
+  // Anti-replay parameter (see “Semi-abstracted Nonce Support” )
+  bytes nonce = 2;
+  // The initCode of the account (needed if and only if the account is not yet
+  // on-chain and needs to be created)
+  bytes init_code = 3;
+  // The data to pass to the sender during the main execution call
+  bytes call_data = 4;
+  // The amount of gas to allocate the main execution call
+  bytes call_gas_limit = 5;
+  // The amount of gas to allocate for the verification step
+  bytes verification_gas_limit = 6;
+  // The amount of gas to pay for to compensate the bundler for pre-verification
+  // execution and calldata
+  bytes pre_verification_gas = 7;
+  // Maximum fee per gas (similar to EIP-1559 max_fee_per_gas)
+  bytes max_fee_per_gas = 8;
+  // Maximum priority fee per gas (similar to EIP-1559 max_priority_fee_per_gas)
+  bytes max_priority_fee_per_gas = 9;
+  // Address of paymaster sponsoring the transaction, followed by extra data to
+  // send to the paymaster (empty for self-sponsored transaction)
+  bytes paymaster_and_data = 10;
+  // Data passed into the account along with the nonce during the verification
+  // step
+  bytes signature = 11;
+}
+
+enum EntityType {
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  ENTITY_TYPE_ACCOUNT = 1;
+  ENTITY_TYPE_PAYMASTER = 2;
+  ENTITY_TYPE_AGGREGATOR = 3;
+  ENTITY_TYPE_FACTORY = 4;
+}
+
+message Entity {
+  EntityType kind = 1;
+  // A 20 byte serialized binary format representation of the address
+  bytes address = 2;
+}
+
+// The type of update to perform on an entity
+enum EntityUpdateType {
+  ENTITY_UPDATE_TYPE_UNSPECIFIED = 0;
+  ENTITY_UPDATE_TYPE_UNSTAKED_INVALIDATION = 1;
+  ENTITY_UPDATE_TYPE_STAKED_INVALIDATION = 2;
+}
+
+// A tuple consisting of an entity and what kind of update to perform on it
+message EntityUpdate {
+  Entity entity = 1;
+  EntityUpdateType update_type = 2;
+}
+
+// Defines a UserOperation persisted in a local mempool
+message MempoolOp {
+  UserOperation uo = 1;
+  // Optional address of the signature aggregator to be used for this UO signature
+  bytes aggregator = 2;
+  //  Time in seconds since epoch after which a UO is considered valid
+  uint64 valid_after = 3;
+  //  Time in seconds since epoch until which a UO is considered valid
+  uint64 valid_until = 4;
+  // A hash of all contracts who's code a UserOperation touches as computed
+  // during validation before the UserOperation enters the mempool. As per
+  // ERC-4337 requirements, it is later compared against an equivalent hash
+  // computed before being added to a Bundle.
+  // 
+  // Specifically, a bundler should reject a UserOperation if, between the time
+  // if it was added to the pool and the time it’s taken out to be added to a
+  // bundle, any of the code that it touches during validation changes.
+  // Therefore, before any UserOperation is added to the pool, validation is run
+  // once, keeping track every contract whose code it touches. This hash is
+  // computed based on the code of all those contracts. When the second
+  // validation runs later, the hash is computed again to verify the code has
+  // not changed.
+  // 
+  // See rule (5) here:
+  // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-4337.md#specification-1
+  bytes expected_code_hash = 5;
+  // A list of all entities that require stake to process this UO as identified in
+  // validation before entering the mempool
+  repeated EntityType entities_needing_stake = 6;
+  // Block hash at which the UserOperation was simulated
+  bytes sim_block_hash = 7;
+  // Indicates if the account is staked. Staked accounts are allowed to have
+  // multiple UserOperations in the mempool, otherwise just one UserOperation is
+  // permitted
+  bool account_is_staked = 8;
+}
+
+// Defines the gRPC endpoints for a UserOperation mempool service
+service OpPool {
+  // Returns an array of the entry point addresses supported by the client. The
+  // first element of the array SHOULD be the entry point addressed preferred by
+  // the client
+  rpc GetSupportedEntryPoints (GetSupportedEntryPointsRequest) returns (GetSupportedEntryPointsResponse);
+  
+  // Adds a UserOperation to the mempool
+  rpc AddOp (AddOpRequest) returns (AddOpResponse);
+  
+  // Get up to `max_ops` from the mempool.
+  rpc GetOps (GetOpsRequest) returns (GetOpsResponse);
+
+  // Removes UserOperations from the mempool
+  rpc RemoveOps(RemoveOpsRequest) returns (RemoveOpsResponse);
+
+  // Handles a list of updates to be performed on entities
+  rpc UpdateEntities(UpdateEntitiesRequest) returns (UpdateEntitiesResponse);
+
+  // Clears the bundler mempool and reputation data of paymasters/accounts/factories/aggregators
+  rpc DebugClearState (DebugClearStateRequest) returns (DebugClearStateResponse);
+  // Dumps the current UserOperations mempool
+  rpc DebugDumpMempool (DebugDumpMempoolRequest) returns (DebugDumpMempoolResponse);
+  // Sets reputation of given addresses.
+  rpc DebugSetReputation (DebugSetReputationRequest) returns (DebugSetReputationResponse);
+  // Returns the reputation data of all observed addresses. Returns an array of
+  // reputation objects, each with the fields described above in
+  // debug_bundler_setReputation
+  rpc DebugDumpReputation(DebugDumpReputationRequest) returns (DebugDumpReputationResponse);
+
+  // Get reputation status of address
+  rpc GetReputationStatus(GetReputationStatusRequest) returns (GetReputationStatusResponse);
+
+  // Get stake status of address
+  rpc GetStakeStatus(GetStakeStatusRequest) returns (GetStakeStatusResponse);
+
+  // Streaming API to subscribe to be updated upon a new block being added to (or reorged onto)
+  // the chain. 
+  rpc SubscribeNewHeads(SubscribeNewHeadsRequest) returns (stream SubscribeNewHeadsResponse);
+}
+
+message GetSupportedEntryPointsRequest {}
+message GetSupportedEntryPointsResponse {
+  // Chain ID as defined in EIP-155.
+  // https://eips.ethereum.org/EIPS/eip-155
+  uint64 chain_id = 1;
+  // The set of serialized entry point addresses supported
+  repeated bytes entry_points = 2;
+}
+
+message AddOpRequest {
+  // The serialized entry point address via which the UserOperation is being submitted
+  bytes entry_point = 1;
+  // The UserOperation to add to the mempool
+  UserOperation op = 2;
+}
+message AddOpResponse {
+  oneof result {
+    AddOpSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message AddOpSuccess {
+  // The serialized UserOperation hash
+  bytes hash = 1;
+}
+
+message GetOpsRequest {
+  // The serialized entry point address
+  bytes entry_point = 1;
+  // The maximum number of UserOperations to return
+  uint64 max_ops = 2;
+  // The mempool shard num retrieve UserOperations from
+  uint64 shard_index = 3; 
+}
+message GetOpsResponse {
+  oneof result {
+    GetOpsSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message GetOpsSuccess {
+  repeated MempoolOp ops = 1;
+}
+
+message GetReputationStatusResponse {
+  oneof result {
+    GetReputationStatusSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+
+message GetReputationStatusRequest {
+  bytes entry_point = 1;
+  bytes address = 2;
+}
+
+message GetReputationStatusSuccess {
+  ReputationStatus status = 1;
+}
+
+message GetStakeStatusResponse {
+  oneof result {
+    GetStakeStatusSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+
+message GetStakeStatusRequest {
+  bytes entry_point = 1;
+  bytes address = 2;
+}
+
+message GetStakeStatusSuccess {
+  StakeStatus status = 1;
+}
+
+message StakeInfo { 
+  uint64 stake = 1;
+  uint32 unstake_delay_sec= 2;
+}
+
+message StakeStatus {
+  bool is_staked = 1;
+  StakeInfo stake_info = 2;
+}
+
+message RemoveOpsRequest {
+  // The serialized entry point address
+  bytes entry_point = 1;
+  // The serialized UserOperation hashes to remove
+  repeated bytes hashes = 2;
+}
+message RemoveOpsResponse {
+  oneof result {
+    RemoveOpsSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message RemoveOpsSuccess {}
+
+message UpdateEntitiesRequest {
+  // The serilaized entry point address
+  bytes entry_point = 1;
+
+  // A list of updates that should be performed on the entities
+  repeated EntityUpdate entity_updates = 2;
+}
+message UpdateEntitiesResponse {
+  oneof result {
+    UpdateEntitiesSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message UpdateEntitiesSuccess {}
+
+message DebugClearStateRequest {}
+message DebugClearStateResponse {
+  oneof result {
+    DebugClearStateSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message DebugClearStateSuccess {}
+
+message DebugDumpMempoolRequest {
+  bytes entry_point = 1;
+}
+message DebugDumpMempoolResponse {
+  oneof result {
+    DebugDumpMempoolSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message DebugDumpMempoolSuccess {
+  repeated MempoolOp ops = 1;
+}
+
+message DebugSetReputationRequest {
+  // The serialized entry point address via which the UserOperation is being submitted
+  bytes entry_point = 1;
+  // An array of reputation entries to add/replace
+  repeated Reputation reputations = 2;
+}
+message DebugSetReputationResponse {
+  oneof result {
+    DebugSetReputationSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message DebugSetReputationSuccess {}
+
+message DebugDumpReputationRequest {
+  // The serialized entry point address.
+  bytes entry_point = 1;
+}
+message DebugDumpReputationResponse {
+  oneof result {
+    DebugDumpReputationSuccess success = 1;
+    MempoolError failure = 2;
+  }
+}
+message DebugDumpReputationSuccess {
+  repeated Reputation reputations = 1;
+}
+
+message SubscribeNewHeadsRequest {}
+message SubscribeNewHeadsResponse {
+  // The new chain head
+  NewHead new_head = 1;
+}
+message NewHead {
+  // The block hash
+  bytes block_hash = 1;
+  // The block number
+  uint64 block_number = 2;
+}
+
+message Reputation {
+  // The (serialized) address to set the reputation for
+  bytes address = 1;
+  // number of times a user operations with that entity was seen and added to the mempool
+  uint64 ops_seen = 2;
+  // number of times a user operations that uses this entity was included on-chain
+  uint64 ops_included = 3;
+}
+
+enum ReputationStatus {
+  REPUTATION_STATUS_UNSPECIFIED = 0;
+  REPUTATION_STATUS_OK = 1;
+  REPUTATION_STATUS_THROTTLED = 2;
+  REPUTATION_STATUS_BANNED = 3;
+}
+
+// MEMPOOL ERRORS
+message MempoolError {
+  oneof error {
+    string internal = 1;
+    OperationAlreadyKnownError operation_already_known = 2;
+    ReplacementUnderpricedError replacement_underpriced = 3;
+    MaxOperationsReachedError max_operations_reached = 4;
+    EntityThrottledError entity_throttled = 5;
+    DiscardedOnInsertError discarded_on_insert = 6;
+    PrecheckViolationError precheck_violation = 7;
+    SimulationViolationError simulation_violation = 8;
+    UnsupportedAggregatorError unsupported_aggregator = 9;
+    InvalidSignatureError invalid_signature = 10;
+    UnknownEntryPointError unknown_entry_point = 11;
+  }
+}
+
+message UnknownEntryPointError {
+  bytes entry_point = 1;
+}
+
+message OperationAlreadyKnownError {}
+
+message ReplacementUnderpricedError {
+  bytes current_fee = 1;
+  bytes current_priority_fee = 2;
+}
+
+message MaxOperationsReachedError {
+  uint64 num_ops = 1;
+  bytes sender_address = 2;
+}
+
+message EntityThrottledError {
+  Entity entity = 1;
+}
+
+message DiscardedOnInsertError {}
+
+message UnsupportedAggregatorError {
+  bytes aggregator_address = 1;
+}
+
+message InvalidSignatureError {}
+
+// PRECHECK VIOLATIONS
+message PrecheckViolationError {
+  oneof violation {
+    InitCodeTooShort init_code_too_short = 1;
+    SenderIsNotContractAndNoInitCode sender_is_not_contract_and_no_init_code = 2;
+    ExistingSenderWithInitCode existing_sender_with_init_code = 3;
+    FactoryIsNotContract factory_is_not_contract = 4;
+    TotalGasLimitTooHigh total_gas_limit_too_high = 5;
+    VerificationGasLimitTooHigh verification_gas_limit_too_high = 6;
+    PreVerificationGasTooLow pre_verification_gas_too_low = 7;
+    PaymasterTooShort paymaster_too_short = 8;
+    PaymasterIsNotContract paymaster_is_not_contract = 9;
+    PaymasterDepositTooLow paymaster_deposit_too_low = 10;
+    SenderFundsTooLow sender_funds_too_low = 11;
+    MaxFeePerGasTooLow max_fee_per_gas_too_low = 12;
+    MaxPriorityFeePerGasTooLow max_priority_fee_per_gas_too_low = 13;
+    CallGasLimitTooLow call_gas_limit_too_low = 14;
+  }
+}
+
+message InitCodeTooShort {
+  uint64 length = 1;
+}
+
+message SenderIsNotContractAndNoInitCode {
+  bytes sender_address = 1;
+}
+
+message ExistingSenderWithInitCode {
+  bytes sender_address = 1;
+}
+
+message FactoryIsNotContract {
+  bytes factory_address = 1;
+}
+
+message TotalGasLimitTooHigh {
+  bytes actual_gas = 1;
+  bytes max_gas = 2;
+}
+
+message VerificationGasLimitTooHigh {
+  bytes actual_gas = 1;
+  bytes max_gas = 2;
+}
+
+message PreVerificationGasTooLow {
+  bytes actual_gas = 1;
+  bytes min_gas = 2;
+}
+
+message PaymasterTooShort {
+  uint64 length = 1;
+}
+
+message PaymasterIsNotContract {
+  bytes paymaster_address = 1;
+}
+
+message PaymasterDepositTooLow {
+  bytes actual_deposit = 1;
+  bytes min_deposit = 2;
+}
+
+message SenderFundsTooLow {
+  bytes actual_funds = 1;
+  bytes min_funds = 2;
+}
+
+message MaxFeePerGasTooLow {
+  bytes actual_fee = 1;
+  bytes min_fee = 2;
+}
+
+message MaxPriorityFeePerGasTooLow {
+  bytes actual_fee = 1;
+  bytes min_fee = 2;
+}
+
+message CallGasLimitTooLow {
+  bytes actual_gas_limit = 1;
+  bytes min_gas_limit = 2;
+}
+
+// SIMULATION VIOLATIONS
+message SimulationViolationError {
+  oneof violation {
+    InvalidSignature invalid_signature = 1;
+    UnintendedRevertWithMessage unintended_revert_with_message = 2;
+    UsedForbiddenOpcode used_forbidden_opcode = 3;
+    UsedForbiddenPrecompile used_forbidden_precompile = 4;
+    FactoryCalledCreate2Twice factory_called_create2_twice = 5;
+    InvalidStorageAccess invalid_storage_access = 6;
+    NotStaked not_staked = 7;
+    UnintendedRevert unintended_revert = 8;
+    DidNotRevert did_not_revert = 9;
+    WrongNumberOfPhases wrong_number_of_phases = 10;
+    CallHadValue call_had_value = 11;
+    OutOfGas out_of_gas = 12;
+    AccessedUndeployedContract accessed_undeployed_contract = 13;
+    CalledBannedEntryPointMethod called_banned_entry_point_method = 14;
+    CodeHashChanged code_hash_changed = 15;
+    AggregatorValidationFailed aggregator_validation_failed = 16;
+  }
+}
+
+message InvalidSignature {}
+
+message UnintendedRevertWithMessage {
+  Entity entity = 1;
+  string reason = 2;
+}
+
+message UsedForbiddenOpcode {
+  Entity entity = 1;
+  bytes contract_address = 2;
+  uint32 opcode = 3;
+}
+
+message UsedForbiddenPrecompile {
+  Entity entity = 1;
+  bytes contract_address = 2;
+  bytes precompile_address = 3;
+}
+
+message FactoryCalledCreate2Twice {
+  bytes factory_address = 1;
+}
+
+message InvalidStorageAccess {
+  Entity entity = 1;
+  bytes contract_address = 2;
+  bytes slot = 3;
+}
+
+message NotStaked {
+  Entity entity = 1;
+  bytes min_stake = 2;
+  bytes min_unstake_delay = 3;
+}
+
+message UnintendedRevert {
+  Entity entity = 1;
+}
+
+message DidNotRevert {}
+
+message WrongNumberOfPhases {
+  uint32 num_phases = 1;
+}
+
+message CallHadValue {
+  Entity entity = 1;
+}
+
+message OutOfGas {
+  Entity entity = 1;
+}
+
+message AccessedUndeployedContract {
+  Entity entity = 1;
+  bytes contract_address = 2;
+}
+
+message CalledBannedEntryPointMethod {
+  Entity entity = 1;
+}
+
+message CodeHashChanged {}
+
+message AggregatorValidationFailed {}
+

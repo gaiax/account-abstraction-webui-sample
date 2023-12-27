@@ -1,0 +1,92 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+name: ci
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+      - name: Install protobuf
+        run: sudo apt-get -y install protobuf-compiler
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          toolchain: 1.74.0
+      - name: Install toolchain (nightly)
+        run: rustup toolchain add nightly --component rustfmt --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        # Build to generate the ABI bindings.
+
+      - name: cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --all --all-features
+
+      - name: cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all --all-features
+      
+      - name: cargo +nightly fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          toolchain: nightly
+          args: --all --check
+
+      - name: cargo clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all --all-features --tests -- -D warnings
+
+      - name: buf setup
+        uses: bufbuild/buf-setup-action@v1
+      - name: buf lint
+        uses: bufbuild/buf-lint-action@v1
+
+  doc-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install codespell
+        run: sudo pip3 install codespell tomli
+
+      - name: Check spelling
+        run: codespell --toml .github/workflows/codespell.toml *.md docs/*.md 
+
+      - name: markdown link check
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          folder-path: 'docs'
+          file-path: 'README.md,CONTRIBUTING.md,SECURITY.md'
+          config-file: '.github/workflows/mlc_config.json'
+        
+  cog_check_job:
+    runs-on: ubuntu-latest
+    name: check conventional commit compliance
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          # pick the pr HEAD instead of the merge commit
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Conventional commit check
+        uses: cocogitto/cocogitto-action@v3
+        with:
+          check-latest-tag-only: true
